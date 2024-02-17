@@ -1,0 +1,242 @@
+
+Chapter 4
+
+// Voting Contract  
+
+
+// SPDX-License-Identifier: GPL-3.0
+
+pragma solidity ^0.8.0;
+
+contract Vote {
+    address electionCommision;
+    address public winner;
+    struct Voter {
+        string name;
+        uint256 age;
+        string gender;
+        uint256 voterId;
+        uint256 voteCandidateId;
+        address voterAddress;
+    }
+
+    struct Candidate {
+        string name;
+        uint256 age;
+        string party;
+        string gender;
+        uint256 candidateId;
+        address candidateAddress;
+        uint256 votes;
+    }
+
+    uint256 nextVoterId = 1;
+    uint256 nextCandidateId = 1;
+
+    uint256 startTime;
+    uint256 endTime;
+
+    mapping(uint256 => Voter) voterDetails; // store details of voter
+    mapping(uint256 => Candidate) candidateDetails; // store details of candidate
+
+    bool stopVoting; // this is for emergency situation
+
+    constructor() {
+        electionCommision = msg.sender; // only election commision deploy this
+    }
+
+    modifier isVotingOver() {
+        require(
+            block.timestamp > endTime || stopVoting == true,
+            "Voting is over"
+        );
+        _;
+    }
+
+    modifier onlyCommisioner() {
+        require(
+            msg.sender == electionCommision,
+            "only from election commision"
+        );
+        _;
+    }
+
+    function candidateRegister(
+        string calldata _name,
+        uint256 _age,
+        string calldata _party,
+        string calldata _gender
+    ) external {
+        require(
+            msg.sender != electionCommision,
+            "you are from election commision"
+        );
+
+        require(
+            candidateVerification(msg.sender) == true,
+            "Candidate already registerd"
+        );
+
+        require(_age >= 18, "you are not eligible");
+
+        require(nextCandidateId < 3, "candidate registration is full fill");
+        candidateDetails[nextCandidateId] = Candidate(
+            _name,
+            _age,
+            _party,
+            _gender,
+            nextCandidateId,
+            msg.sender,
+            0
+        );
+
+        nextCandidateId++;
+    }
+
+    function candidateVerification(address _person)
+        internal
+        view
+        returns (bool)
+    {
+        for (uint i = 1; i < nextCandidateId; i++) {
+            if (candidateDetails[i].candidateAddress == _person) {
+                return false; // candidate exists already
+            } 
+            
+        }
+        return true;
+    }
+
+    function candidateList() public view returns (Candidate[] memory) {
+        Candidate[] memory array = new Candidate[](nextCandidateId - 1);
+
+        for (uint256 i = 1; i < nextCandidateId; i++) {
+            array[i - 1] = candidateDetails[i];
+        }
+
+        return array;
+    }
+
+    function voterRegister(
+        string calldata _name,
+        uint256 _age,
+        string calldata _gender
+    ) external {
+        require(
+            voterVerification(msg.sender) == true,
+            "you are already registerd"
+        );
+        require(_age >= 18, "you are not eligible");
+
+        voterDetails[nextVoterId] = Voter(
+            _name,
+            _age,
+            _gender,
+            nextVoterId,
+            0,
+            msg.sender
+        );
+        nextVoterId++;
+    }
+
+    function voterVerification(address _person) internal view returns (bool) {
+        for (uint256 i = 1; i <= nextVoterId; i++) {
+            if (voterDetails[i].voterAddress == _person) {
+                return false;
+            } else {
+                return true;
+            }
+        }
+    }
+
+    function voterList() public view returns (Voter[] memory) {
+        Voter[] memory array = new Voter[](nextVoterId - 1);
+
+        for (uint256 i = 1; i <= nextVoterId; i++) {
+            array[i - 1] = voterDetails[i];
+        }
+
+        return array;
+    }
+
+    function vote(uint256 _voterId, uint256 _id) external isVotingOver {
+        require(
+            voterDetails[_voterId].voteCandidateId == 0,
+            "you are already voted"
+        );
+        require(
+            voterDetails[_voterId].voterAddress == msg.sender,
+            "you are not voter"
+        );
+
+        require(startTime != 0, "voting not started yet");
+        require(nextCandidateId == 3, "Candidate is not registerd yet");
+        require(_id > 0 && _id < 3, "Invalid candidate id");
+
+        voterDetails[_voterId].voteCandidateId = _id;
+        candidateDetails[_id].votes++;
+    }
+
+    function voteTime(uint256 _stratTime, uint256 _endTime)
+        external
+        onlyCommisioner
+    {
+        startTime = block.timestamp + _stratTime;
+        endTime = block.timestamp + _endTime;
+        stopVoting = false;
+    }
+
+    function votingStatus() public view returns (string memory) {
+        if (startTime == 0) {
+            return "voting not started yet";
+        } else if (
+            (startTime != 0 && endTime > block.timestamp) && stopVoting == false
+        ) {
+            return "in progress";
+        } else {
+            return "ended";
+        }
+    }
+
+    function checkStatus() public view returns (bool) {
+        string memory status = votingStatus();
+
+        bytes32 hexa = keccak256(abi.encodePacked(status));
+        bytes32 Started = keccak256(
+            abi.encodePacked("Voting has not strated yet")
+        );
+        bytes32 Progress = keccak256(abi.encodePacked("In progress"));
+        bytes32 Ended = keccak256(abi.encodePacked("vothin has ended"));
+
+        if (hexa == Ended) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    function result() external onlyCommisioner {
+        require(nextCandidateId > 1, "no candidate registered");
+        uint256 maximumVotes = 0;
+        address currentwinner;
+
+        for (uint256 i = 1; i < nextCandidateId; i++) {
+            if (candidateDetails[i].votes > maximumVotes) {
+                maximumVotes = candidateDetails[i].votes;
+                currentwinner = candidateDetails[i].candidateAddress;
+            }
+        }
+
+        winner = currentwinner;
+    }
+
+    function emergency() public onlyCommisioner {
+        stopVoting = true;
+    }
+}
+
+
+
+
+
+
